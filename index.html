@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>學生教育雲帳號更新工具｜石門國小</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<style>
+  :root {
+    --blue: #2563eb;
+    --blue-dark: #1d4ed8;
+    --teal: #0d9488;
+    --bg: #f1f5f9;
+    --card: #ffffff;
+    --text: #1e293b;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --green: #16a34a;
+    --red: #dc2626;
+    --amber: #d97706;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding-bottom: 40px;
+  }
+  header {
+    background: linear-gradient(135deg, #1e3a8a, #2563eb);
+    color: #fff;
+    padding: 28px 24px;
+    text-align: center;
+  }
+  header h1 { font-size: 24px; font-weight: 700; letter-spacing: 1px; }
+  header p { margin-top: 8px; font-size: 14px; opacity: .92; }
+  .privacy-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    background: rgba(255,255,255,.16);
+    border: 1px solid rgba(255,255,255,.35);
+    border-radius: 99px;
+    padding: 6px 16px;
+    font-size: 13px;
+  }
+  main { max-width: 880px; margin: 24px auto; padding: 0 16px; }
+  .card {
+    background: var(--card);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    padding: 20px 22px;
+    margin-bottom: 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  }
+  .step-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .step-num {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--blue);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .step-desc { font-size: 13px; color: var(--muted); margin-bottom: 14px; padding-left: 38px; }
+  .dropzone {
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+    padding: 26px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+    background: #f8fafc;
+  }
+  .dropzone:hover, .dropzone.dragover {
+    border-color: var(--blue);
+    background: #eff6ff;
+  }
+  .dropzone.loaded {
+    border-color: var(--green);
+    border-style: solid;
+    background: #f0fdf4;
+  }
+  .dz-icon { font-size: 30px; margin-bottom: 8px; }
+  .dz-text { font-size: 14px; color: var(--muted); }
+  .dz-text strong { color: var(--text); }
+  .dz-file { font-size: 14px; color: var(--green); font-weight: 600; margin-top: 4px; word-break: break-all; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .chip {
+    background: #eff6ff;
+    color: var(--blue-dark);
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 5px 12px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .chip.total { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat {
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat .num { font-size: 30px; font-weight: 800; }
+  .stat .lbl { font-size: 13px; margin-top: 2px; }
+  .stat.keep { background: #eff6ff; color: var(--blue-dark); }
+  .stat.out  { background: #fef2f2; color: var(--red); }
+  .stat.in   { background: #f0fdf4; color: var(--green); }
+  .list-title { font-size: 15px; font-weight: 700; margin: 18px 0 8px; display: flex; align-items: center; gap: 6px; }
+  table.result {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  table.result th, table.result td {
+    border: 1px solid var(--border);
+    padding: 7px 10px;
+    text-align: center;
+  }
+  table.result th { background: #f8fafc; color: var(--muted); font-weight: 600; }
+  table.result td.name { font-weight: 600; }
+  .tag {
+    display: inline-block;
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .tag.out { background: #fef2f2; color: var(--red); }
+  .tag.in  { background: #f0fdf4; color: var(--green); }
+  .rename-box {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-top: 16px;
+    font-size: 13.5px;
+  }
+  .rename-box .rb-title { font-weight: 700; color: var(--amber); margin-bottom: 8px; }
+  .rename-box ul { padding-left: 20px; }
+  .rename-box li { margin: 4px 0; color: #92400e; }
+  .btn-export {
+    display: block;
+    width: 100%;
+    margin-top: 20px;
+    background: linear-gradient(135deg, var(--teal), #14b8a6);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    padding: 15px;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: transform .15s, box-shadow .15s;
+  }
+  .btn-export:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(13,148,136,.35); }
+  .btn-export:disabled { background: #cbd5e1; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-reset {
+    display: block;
+    margin: 14px auto 0;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    padding: 8px 22px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn-reset:hover { background: #f8fafc; }
+  .hidden { display: none; }
+  .warn-box {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--red);
+  }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 10px; text-align: center; }
+  .site-credit {
+    text-align: center;
+    padding: 24px 16px;
+    font-size: 13px;
+    color: rgba(0, 0, 0, 0.55);
+  }
+  .site-credit__heart { display: inline-block; margin: 0 2px; filter: saturate(1.1); }
+  .site-credit__author {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px dotted currentColor;
+    padding-bottom: 1px;
+    transition: color .2s, border-color .2s;
+  }
+  .site-credit__author:hover { color: #c63; border-bottom-color: #c63; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🏫 學生教育雲帳號更新工具</h1>
+  <p>桃園市龍潭區石門國民小學 · 自動比對轉入轉出學生並產出更新後總表</p>
+  <div class="privacy-badge">🔒 純前端處理 — 所有資料只在這台電腦的瀏覽器運算，不會上傳到任何伺服器</div>
+</header>
+
+<main>
+  <div class="card" id="card-current">
+    <div class="step-title"><span class="step-num">1</span>載入現有帳密總表</div>
+    <div class="step-desc">就是目前 NAS 上的「學生教育雲帳密」檔（一年級～六年級多個工作表）。支援 .xls / .xlsx</div>
+    <div class="dropzone" id="dz-current">
+      <div class="dz-icon">📂</div>
+      <div class="dz-text"><strong>點擊選擇</strong> 或把檔案拖進來</div>
+      <div class="dz-file hidden" id="file-current"></div>
+    </div>
+    <input type="file" id="input-current" accept=".xls,.xlsx" class="hidden">
+    <div class="chips hidden" id="chips-current"></div>
+  </div>
+
+  <div class="card" id="card-new">
+    <div class="step-title"><span class="step-num">2</span>載入教育局新名冊</div>
+    <div class="step-desc">從教育局系統下載的「學生資料概況_xxxx.xls」。會自動辨識證照號碼（取末四碼）與出生日期格式</div>
+    <div class="dropzone" id="dz-new">
+      <div class="dz-icon">🏛️</div>
+      <div class="dz-text"><strong>點擊選擇</strong> 或把檔案拖進來</div>
+      <div class="dz-file hidden" id="file-new"></div>
+    </div>
+    <input type="file" id="input-new" accept=".xls,.xlsx" class="hidden">
+    <div class="chips hidden" id="chips-new"></div>
+  </div>
+
+  <div class="card hidden" id="card-result">
+    <div class="step-title"><span class="step-num">3</span>比對結果</div>
+    <div class="step-desc">主鍵 =「姓名 + 身分證末四碼」，兩者都相同才視為同一位學生</div>
+    <div class="stats">
+      <div class="stat keep"><div class="num" id="stat-keep">0</div><div class="lbl">不變（維持原帳密）</div></div>
+      <div class="stat out"><div class="num" id="stat-out">0</div><div class="lbl">轉出（移除）</div></div>
+      <div class="stat in"><div class="num" id="stat-in">0</div><div class="lbl">轉入（新增）</div></div>
+    </div>
+    <div id="rename-area"></div>
+    <div id="removed-area"></div>
+    <div id="added-area"></div>
+    <div id="warn-area"></div>
+    <button class="btn-export" id="btn-export">⬇️ 下載更新後完整總表（.xlsx，標題列已凍結）</button>
+    <div class="hint">輸出檔含六個年級工作表，依「班級 → 座號」排序，第一列標題已凍結窗格</div>
+    <button class="btn-reset" id="btn-reset">↺ 全部重來</button>
+  </div>
+</main>
+
+<footer class="site-credit">
+  Made with <span class="site-credit__heart" aria-label="愛心">❤️</span> by
+  <a
+    href="https://www.smes.tyc.edu.tw/modules/tadnews/page.php?ncsn=11&nsn=16#a5"
+    target="_blank"
+    rel="noopener noreferrer"
+    class="site-credit__author"
+  >阿凱老師</a>
+</footer>
+
+<script>
+const GRADE_NAMES = { 1: "一年級", 2: "二年級", 3: "三年級", 4: "四年級", 5: "五年級", 6: "六年級" };
+const HEADERS = ["學生姓名", "年級", "班級", "座號", "身分證末四碼", "西元出生年月日"];
+
+const ALIASES = [
+  [/姓名/, "name"],
+  [/^年級/, "grade"],
+  [/^班級|^班次/, "cls"],
+  [/^座號/, "seat"],
+  [/證照號碼|身分證|末四碼/, "last4"],
+  [/出生|生日/, "bday"],
+];
+
+const state = { current: null, fresh: null, result: null };
+
+function clean(v) {
+  if (v === null || v === undefined) return "";
+  return String(v).replace(/[\s　]/g, "");
+}
+
+function toInt(v) {
+  const n = parseInt(String(v).replace(/[^\d-]/g, ""), 10);
+  return isNaN(n) ? 0 : n;
+}
+
+function normLast4(v) {
+  const digits = String(v ?? "").replace(/\D/g, "");
+  if (!digits) return "";
+  return digits.slice(-4).padStart(4, "0");
+}
+
+function normBday(v) {
+  if (v instanceof Date) {
+    const y = v.getFullYear(), m = v.getMonth() + 1, d = v.getDate();
+    return String(y) + String(m).padStart(2, "0") + String(d).padStart(2, "0");
+  }
+  const groups = String(v ?? "").match(/\d+/g) || [];
+  if (groups.length === 1 && groups[0].length === 8) return groups[0];
+  if (groups.length >= 3) {
+    return groups[0].padStart(4, "0") + groups[1].padStart(2, "0") + groups[2].padStart(2, "0");
+  }
+  return groups.join("");
+}
+
+function findHeaderRow(rows) {
+  const limit = Math.min(rows.length, 15);
+  for (let i = 0; i < limit; i++) {
+    const cells = (rows[i] || []).map(clean);
+    if (cells.some(c => /姓名/.test(c)) && cells.some(c => /座號/.test(c))) return i;
+  }
+  return -1;
+}
+
+function mapColumns(headerRow) {
+  const map = {};
+  headerRow.forEach((cell, idx) => {
+    const text = clean(cell);
+    if (!text) return;
+    for (const [re, key] of ALIASES) {
+      if (re.test(text) && !(key in map)) { map[key] = idx; break; }
+    }
+  });
+  return map;
+}
+
+function parseWorkbook(wb) {
+  const students = [];
+  wb.SheetNames.forEach((sname, sheetIdx) => {
+    const ws = wb.Sheets[sname];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+    const hIdx = findHeaderRow(rows);
+    if (hIdx < 0) return;
+    const cols = mapColumns(rows[hIdx]);
+    if (!("name" in cols)) return;
+    for (let r = hIdx + 1; r < rows.length; r++) {
+      const row = rows[r] || [];
+      const name = clean(row[cols.name]);
+      if (!name) continue;
+      let grade = "grade" in cols ? toInt(row[cols.grade]) : 0;
+      if (grade < 1 || grade > 9) grade = sheetIdx + 1;
+      students.push({
+        name,
+        grade,
+        cls: "cls" in cols ? toInt(row[cols.cls]) : 0,
+        seat: "seat" in cols ? toInt(row[cols.seat]) : 0,
+        last4: "last4" in cols ? normLast4(row[cols.last4]) : "",
+        bday: "bday" in cols ? normBday(row[cols.bday]) : "",
+      });
+    }
+  });
+  return students;
+}
+
+function keyOf(s) { return s.name + "|" + s.last4; }
+
+function compare(currentList, freshList) {
+  const curMap = new Map(currentList.map(s => [keyOf(s), s]));
+  const newMap = new Map(freshList.map(s => [keyOf(s), s]));
+  const removed = currentList.filter(s => !newMap.has(keyOf(s)));
+  const added = freshList.filter(s => !curMap.has(keyOf(s)));
+  const unchanged = currentList.length - removed.length;
+
+  const renames = [];
+  for (const r of removed) {
+    for (const a of added) {
+      if (!r.last4 || !r.bday) continue;
+      const sameId = r.last4 === a.last4 && r.bday === a.bday && r.name !== a.name;
+      const sameName = r.name === a.name && r.bday === a.bday && r.last4 !== a.last4;
+      if (sameId) renames.push({ from: r, to: a, type: "改名" });
+      else if (sameName) renames.push({ from: r, to: a, type: "證號更正" });
+    }
+  }
+  return { removed, added, unchanged, renames };
+}
+
+function applyChanges(currentList, removed, added) {
+  const removeKeys = new Set(removed.map(keyOf));
+  const kept = currentList.filter(s => !removeKeys.has(keyOf(s)));
+  const skipped = [];
+  const byGrade = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+  for (const s of kept) {
+    if (byGrade[s.grade]) byGrade[s.grade].push(s);
+    else skipped.push(s);
+  }
+  for (const s of added) {
+    if (byGrade[s.grade]) byGrade[s.grade].push(s);
+    else skipped.push(s);
+  }
+  for (const g of Object.keys(byGrade)) {
+    byGrade[g].sort((a, b) => a.cls - b.cls || a.seat - b.seat);
+  }
+  return { byGrade, skipped };
+}
+
+async function buildExportBlob(byGrade) {
+  const wb = new ExcelJS.Workbook();
+  const headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF8EB4E2" } };
+  const thinBorder = {
+    top: { style: "thin" }, bottom: { style: "thin" },
+    left: { style: "thin" }, right: { style: "thin" },
+  };
+  for (let g = 1; g <= 6; g++) {
+    const ws = wb.addWorksheet(GRADE_NAMES[g], {
+      views: [{ state: "frozen", xSplit: 0, ySplit: 1 }],
+    });
+    ws.columns = [
+      { width: 13 }, { width: 7 }, { width: 7 },
+      { width: 7 }, { width: 15 }, { width: 17 },
+    ];
+    const hr = ws.addRow(HEADERS);
+    hr.eachCell(c => {
+      c.font = { bold: true };
+      c.fill = headerFill;
+      c.border = thinBorder;
+      c.alignment = { horizontal: "center" };
+    });
+    for (const s of (byGrade[g] || [])) {
+      const row = ws.addRow([s.name, s.grade, s.cls, s.seat, s.last4, s.bday]);
+      row.eachCell(c => { c.border = thinBorder; });
+      row.getCell(5).value = String(s.last4);
+      row.getCell(6).value = String(s.bday);
+    }
+  }
+  const buf = await wb.xlsx.writeBuffer();
+  return new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
+function readFileAsWorkbook(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = e => {
+      try { resolve(XLSX.read(new Uint8Array(e.target.result), { type: "array" })); }
+      catch (err) { reject(err); }
+    };
+    fr.onerror = reject;
+    fr.readAsArrayBuffer(file);
+  });
+}
+
+function renderChips(elId, students, label) {
+  const el = document.getElementById(elId);
+  const byGrade = {};
+  students.forEach(s => { byGrade[s.grade] = (byGrade[s.grade] || 0) + 1; });
+  let html = `<span class="chip total">${label}共 ${students.length} 人</span>`;
+  Object.keys(byGrade).sort().forEach(g => {
+    const gname = GRADE_NAMES[g] || `${g}年級`;
+    html += `<span class="chip">${gname} ${byGrade[g]}</span>`;
+  });
+  el.innerHTML = html;
+  el.classList.remove("hidden");
+}
+
+function studentRow(s, tag) {
+  const gname = GRADE_NAMES[s.grade] || `${s.grade}年級`;
+  return `<tr>
+    <td><span class="tag ${tag === "移除" ? "out" : "in"}">${tag}</span></td>
+    <td class="name">${s.name}</td>
+    <td>${gname}</td><td>${s.cls} 班</td><td>${s.seat} 號</td>
+    <td>${s.last4}</td><td>${s.bday}</td>
+  </tr>`;
+}
+
+function renderResult() {
+  const { removed, added, unchanged, renames } = state.result;
+  document.getElementById("stat-keep").textContent = unchanged;
+  document.getElementById("stat-out").textContent = removed.length;
+  document.getElementById("stat-in").textContent = added.length;
+
+  const tableHead = `<table class="result"><tr><th></th><th>姓名</th><th>年級</th><th>班級</th><th>座號</th><th>末四碼</th><th>出生年月日</th></tr>`;
+
+  const renameArea = document.getElementById("rename-area");
+  if (renames.length) {
+    renameArea.innerHTML = `<div class="rename-box">
+      <div class="rb-title">⚠️ 疑似同一人（${renames.length} 組）— 已照新名冊處理，僅供人工確認</div>
+      <ul>${renames.map(p =>
+        `<li>${p.from.name} → <strong>${p.to.name}</strong>（${p.type}，末四碼 ${p.to.last4}，${GRADE_NAMES[p.to.grade] || ""} ${p.to.cls} 班 ${p.to.seat} 號）</li>`
+      ).join("")}</ul>
+    </div>`;
+  } else renameArea.innerHTML = "";
+
+  const removedArea = document.getElementById("removed-area");
+  removedArea.innerHTML = removed.length
+    ? `<div class="list-title">🗑️ 轉出移除名單（${removed.length} 人）</div>` +
+      tableHead + removed.map(s => studentRow(s, "移除")).join("") + "</table>"
+    : "";
+
+  const addedArea = document.getElementById("added-area");
+  addedArea.innerHTML = added.length
+    ? `<div class="list-title">➕ 轉入新增名單（${added.length} 人）</div>` +
+      tableHead + added.map(s => studentRow(s, "新增")).join("") + "</table>"
+    : "";
+
+  document.getElementById("card-result").classList.remove("hidden");
+  document.getElementById("card-result").scrollIntoView({ behavior: "smooth" });
+}
+
+function tryCompare() {
+  if (!state.current || !state.fresh) return;
+  state.result = compare(state.current, state.fresh);
+  renderResult();
+}
+
+function setupDropzone(dzId, inputId, fileLabelId, onWorkbook) {
+  const dz = document.getElementById(dzId);
+  const input = document.getElementById(inputId);
+  const fileLabel = document.getElementById(fileLabelId);
+
+  async function handle(file) {
+    if (!file) return;
+    try {
+      const wb = await readFileAsWorkbook(file);
+      fileLabel.textContent = "✅ " + file.name;
+      fileLabel.classList.remove("hidden");
+      dz.classList.add("loaded");
+      onWorkbook(wb);
+    } catch (err) {
+      alert("讀取檔案失敗：" + err.message);
+    }
+  }
+  dz.addEventListener("click", () => input.click());
+  input.addEventListener("change", () => handle(input.files[0]));
+  dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("dragover"); });
+  dz.addEventListener("dragleave", () => dz.classList.remove("dragover"));
+  dz.addEventListener("drop", e => {
+    e.preventDefault();
+    dz.classList.remove("dragover");
+    handle(e.dataTransfer.files[0]);
+  });
+}
+
+setupDropzone("dz-current", "input-current", "file-current", wb => {
+  state.current = parseWorkbook(wb);
+  renderChips("chips-current", state.current, "現有名冊");
+  tryCompare();
+});
+
+setupDropzone("dz-new", "input-new", "file-new", wb => {
+  state.fresh = parseWorkbook(wb);
+  renderChips("chips-new", state.fresh, "教育局新名冊");
+  tryCompare();
+});
+
+document.getElementById("btn-export").addEventListener("click", async () => {
+  if (!state.result) return;
+  const { byGrade, skipped } = applyChanges(state.current, state.result.removed, state.result.added);
+  const warnArea = document.getElementById("warn-area");
+  warnArea.innerHTML = skipped.length
+    ? `<div class="warn-box">⚠️ 有 ${skipped.length} 筆資料年級無法判定（非 1～6），未寫入：${skipped.map(s => s.name).join("、")}</div>`
+    : "";
+  const blob = await buildExportBlob(byGrade);
+  const d = new Date();
+  const stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `學生教育雲帳密_更新_${stamp}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+document.getElementById("btn-reset").addEventListener("click", () => location.reload());
+
+window.__test = {
+  async load(curBuf, newBuf) {
+    const wbCur = XLSX.read(new Uint8Array(curBuf), { type: "array" });
+    const wbNew = XLSX.read(new Uint8Array(newBuf), { type: "array" });
+    state.current = parseWorkbook(wbCur);
+    renderChips("chips-current", state.current, "現有名冊");
+    document.getElementById("dz-current").classList.add("loaded");
+    state.fresh = parseWorkbook(wbNew);
+    renderChips("chips-new", state.fresh, "教育局新名冊");
+    document.getElementById("dz-new").classList.add("loaded");
+    tryCompare();
+  },
+  summary() {
+    const { byGrade, skipped } = applyChanges(state.current, state.result.removed, state.result.added);
+    const gradeCounts = {};
+    for (const g of Object.keys(byGrade)) gradeCounts[g] = byGrade[g].length;
+    return {
+      currentTotal: state.current.length,
+      freshTotal: state.fresh.length,
+      unchanged: state.result.unchanged,
+      removed: state.result.removed.length,
+      added: state.result.added.length,
+      renames: state.result.renames.map(p => `${p.from.name}->${p.to.name}(${p.type})`),
+      gradeCounts,
+      skipped: skipped.length,
+    };
+  },
+  async exportSize() {
+    const { byGrade } = applyChanges(state.current, state.result.removed, state.result.added);
+    const blob = await buildExportBlob(byGrade);
+    return blob.size;
+  },
+};
+</script>
+</body>
+</html>
