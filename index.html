@@ -245,6 +245,15 @@
     box-shadow: 0 8px 24px -6px rgba(0,0,0,.4);
   }
   #mini-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .keymode-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+    font-size: 13px; color: var(--muted); margin-bottom: 14px;
+    padding: 9px 12px; background: #f8fafc;
+    border: 1px solid var(--border); border-radius: 10px;
+  }
+  .keymode-row .km-label { font-weight: 700; color: var(--text); }
+  .keymode-row label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .keymode-row input { accent-color: var(--blue); cursor: pointer; }
   .hidden { display: none; }
   .warn-box {
     background: #fef2f2;
@@ -375,7 +384,7 @@
     .health-box li, .health-box li b, .health-box .hb-title { color: #fcd34d; }
     .health-box .hb-title.ok { color: #86efac; }
     .warn-box { background: #2a1416; border-color: #5b2330; color: #fca5a5; }
-    .sync-toggle { background: #172033; }
+    .sync-toggle, .keymode-row { background: #172033; }
     .btn-secondary { background: #1e293b; }
     .btn-secondary:hover { background: #14271d; }
     .btn-reset:hover { background: #172033; }
@@ -420,7 +429,12 @@
 
   <div class="card hidden" id="card-result">
     <div class="step-title"><span class="step-num">3</span>比對結果</div>
-    <div class="step-desc">主鍵 =「姓名 + 身分證末四碼」，兩者都相同才視為同一位學生</div>
+    <div class="step-desc">主鍵相同才視為同一位學生</div>
+    <div class="keymode-row">
+      <span class="km-label">比對主鍵：</span>
+      <label><input type="radio" name="keymode" value="nl" checked> 姓名＋末四碼</label>
+      <label><input type="radio" name="keymode" value="nlb"> ＋生日（更嚴格，防同名同末四碼誤判）</label>
+    </div>
     <div class="stats">
       <div class="stat keep"><div class="num" id="stat-keep">0</div><div class="lbl">不變（維持原帳密）</div></div>
       <div class="stat out"><div class="num" id="stat-out">0</div><div class="lbl">轉出（移除）</div></div>
@@ -474,7 +488,7 @@ const ALIASES = [
   [/出生|生日/, "bday"],
 ];
 
-const state = { current: null, fresh: null, result: null, sync: true };
+const state = { current: null, fresh: null, result: null, sync: true, keyMode: "nl" };
 
 function clean(v) {
   if (v === null || v === undefined) return "";
@@ -554,7 +568,12 @@ function parseWorkbook(wb) {
   return students;
 }
 
-function keyOf(s) { return s.name + "|" + s.last4; }
+// A-5：主鍵預設「姓名＋末四碼」；可切「＋生日」更嚴格，防同名同末四碼誤判
+function keyOf(s) {
+  return state.keyMode === "nlb"
+    ? s.name + "|" + s.last4 + "|" + s.bday
+    : s.name + "|" + s.last4;
+}
 
 function compare(currentList, freshList) {
   const curMap = new Map(currentList.map(s => [keyOf(s), s]));
@@ -889,13 +908,6 @@ function renderComparison() {
     : "";
 }
 
-function renderResult() {
-  renderComparison();
-  renderHealth();
-  renderDerived();
-  document.getElementById("card-result").classList.remove("hidden");
-  document.getElementById("card-result").scrollIntoView({ behavior: "smooth" });
-}
 
 // ---- 資料健檢（Pre-flight Check）----
 function isValidBday(b) {
@@ -977,10 +989,20 @@ function renderDerived() {
 
 function tryCompare() {
   if (!state.current || !state.fresh) return;
+  recompute();
+  const card = document.getElementById("card-result");
+  card.classList.remove("hidden");
+  card.scrollIntoView({ behavior: "smooth" });
+}
+
+// 重新比對 + 渲染（不捲動），供主鍵切換等重算情境呼叫。
+function recompute() {
   state.result = compare(state.current, state.fresh);
   // A-4：每組改名預設「視為同一人」（保留帳密、不計轉出轉入）
   state.renameSame = state.result.renames.map(() => true);
-  renderResult();
+  renderComparison();
+  renderHealth();
+  renderDerived();
 }
 
 // A-4：依「視為同一人」決策，算出實際要報的轉出/轉入與更名清單。
@@ -1042,6 +1064,14 @@ setupDropzone("dz-new", "input-new", "file-new", wb => {
 document.getElementById("opt-sync").addEventListener("change", e => {
   state.sync = e.target.checked;
   renderDerived();
+});
+
+document.querySelectorAll('input[name="keymode"]').forEach((r) => {
+  r.addEventListener("change", (e) => {
+    if (!e.target.checked) return;
+    state.keyMode = e.target.value;
+    if (state.result) recompute();
+  });
 });
 
 document.getElementById("btn-export").addEventListener("click", async () => {
@@ -1117,6 +1147,12 @@ window.__test = {
     if (el) el.checked = v;
     renderDerived();
   },
+  setKeyMode(mode) {
+    state.keyMode = mode;
+    const el = document.querySelector(`input[name="keymode"][value="${mode}"]`);
+    if (el) el.checked = true;
+    if (state.result) recompute();
+  },
   summary() {
     const { byGrade, skipped, synced, collisions } = computeOutput();
     const gradeCounts = {};
@@ -1165,7 +1201,7 @@ window.__test = {
 <script>
 (function(){
   if(!('serviceWorker' in navigator)) return;
-  var APP_VERSION='2026.06.11-6';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
+  var APP_VERSION='2026.06.11-7';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
   var reloaded=false;
   function showBar(waiting){
     if(document.getElementById('sw-update-bar')) return;
