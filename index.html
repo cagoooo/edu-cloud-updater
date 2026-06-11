@@ -775,5 +775,44 @@ window.__test = {
   },
 };
 </script>
+
+<!-- PWA：Service Worker 註冊 + 新版本更新通知列 -->
+<script>
+(function(){
+  if(!('serviceWorker' in navigator)) return;
+  var APP_VERSION='2026.06.11-1';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
+  var reloaded=false;
+  function showBar(waiting){
+    if(document.getElementById('sw-update-bar')) return;
+    var s=document.createElement('style');
+    s.textContent='#sw-update-bar{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:12px;background:#1e3a8a;color:#fff;padding:12px 16px;border-radius:14px;box-shadow:0 14px 34px -10px rgba(0,0,0,.5);font:14.5px "Microsoft JhengHei",system-ui,sans-serif;max-width:calc(100vw - 28px)}#sw-update-bar button{cursor:pointer;border:none;border-radius:9px;font-weight:700;font:inherit}#sw-go{background:linear-gradient(135deg,#0d9488,#14b8a6);color:#fff;padding:8px 15px}#sw-x{background:transparent;color:#a9b6d6;padding:6px 9px}';
+    document.head.appendChild(s);
+    var b=document.createElement('div');b.id='sw-update-bar';b.setAttribute('role','status');
+    b.innerHTML='<span>✨ 工具有新版本</span><button id="sw-go">重新整理載入</button><button id="sw-x" aria-label="關閉">✕</button>';
+    document.body.appendChild(b);
+    document.getElementById('sw-x').onclick=function(){ b.remove(); };
+    document.getElementById('sw-go').onclick=function(){ waiting ? waiting.postMessage({type:'SKIP_WAITING'}) : location.reload(); };
+  }
+  navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(reg){
+    if(reg.waiting && navigator.serviceWorker.controller) showBar(reg.waiting);
+    reg.addEventListener('updatefound',function(){
+      var nw=reg.installing; if(!nw) return;
+      nw.addEventListener('statechange',function(){
+        if(nw.state==='installed' && navigator.serviceWorker.controller) showBar(reg.waiting||nw);
+      });
+    });
+    setInterval(function(){ reg.update().catch(function(){}); }, 60000);
+  }).catch(function(){});
+  navigator.serviceWorker.addEventListener('controllerchange',function(){
+    if(reloaded) return; reloaded=true; location.reload();   // 旗標防無限重整
+  });
+  // 備胎：version.json 輪詢，SW 事件沒攔到也能提示
+  function checkVer(){ fetch('version.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json();})
+    .then(function(d){ if(d&&d.version&&d.version!==APP_VERSION) showBar(null); }).catch(function(){}); }
+  ['focus','online','pageshow'].forEach(function(ev){ window.addEventListener(ev,checkVer); });
+  document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') checkVer(); });
+  setTimeout(checkVer,8000); setInterval(checkVer,180000);
+})();
+</script>
 </body>
 </html>
