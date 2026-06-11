@@ -184,6 +184,11 @@
   .rename-box .rb-title { font-weight: 700; color: var(--amber); margin-bottom: 8px; }
   .rename-box ul { padding-left: 20px; }
   .rename-box li { margin: 4px 0; color: #92400e; }
+  .rename-list { list-style: none; padding-left: 0 !important; }
+  .rename-list li { display: flex; align-items: flex-start; gap: 10px; margin: 7px 0; flex-wrap: wrap; }
+  .rn-label { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: #b45309; white-space: nowrap; cursor: pointer; }
+  .rn-label input { width: 15px; height: 15px; accent-color: var(--amber); cursor: pointer; }
+  .rn-desc { color: #92400e; }
   .btn-export {
     display: block;
     width: 100%;
@@ -622,7 +627,8 @@ function toast(msg) {
 // 異動清冊（.xlsx）：摘要 / 轉入 / 轉出 / 注意事項 四張表
 async function buildChangeLogBlob() {
   const { collisions } = computeOutput();
-  const { removed, added, unchanged, renames } = state.result;
+  const { unchanged } = state.result;
+  const { removedT, addedT, renamed } = effectiveResult();
   const wb = new ExcelJS.Workbook();
   const thin = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
   const headFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF8EB4E2" } };
@@ -634,9 +640,9 @@ async function buildChangeLogBlob() {
     ["現有總人數", state.current.length],
     ["新名冊人數", state.fresh.length],
     ["不變（維持原帳密）", unchanged],
-    ["轉入（新增）", added.length],
-    ["轉出（移除）", removed.length],
-    ["疑似改名／證號更正", renames.length + " 組"],
+    ["轉入（新增）", addedT.length],
+    ["轉出（移除）", removedT.length],
+    ["更名／證號更正（視為同一人）", renamed.length + " 組"],
     ["末四碼撞號", collisions.length + " 組"],
     ["升年級／編班同步", state.sync ? "開啟（依新名冊更新班級座號，帳密保留）" : "關閉"],
   ].forEach((r) => {
@@ -657,23 +663,24 @@ async function buildChangeLogBlob() {
     }
     if (!arr.length) ws.addRow(["（無）"]);
   }
-  listSheet("轉入(新增)", added, "轉入");
-  listSheet("轉出(移除)", removed, "轉出");
+  listSheet("轉入(新增)", addedT, "轉入");
+  listSheet("轉出(移除)", removedT, "轉出");
 
   const sn = wb.addWorksheet("注意事項");
-  sn.columns = [{ width: 14 }, { width: 56 }];
+  sn.columns = [{ width: 16 }, { width: 56 }];
   const hr = sn.addRow(["類型", "說明"]);
   hr.eachCell((c) => { c.font = { bold: true }; c.fill = headFill; c.border = thin; });
-  for (const p of renames) {
-    sn.addRow([p.type, `${p.from.name} → ${p.to.name}（末四碼 ${p.to.last4}，${GRADE_NAMES[p.to.grade] || ""} ${p.to.cls} 班 ${p.to.seat} 號）`])
+  for (const p of renamed) {
+    const note = p.type === "證號更正" ? "（帳號已改，請同步更新教育雲後台）" : "（末四碼不變，帳密保留）";
+    sn.addRow([p.type, `${p.from.name} → ${p.to.name}${note}（末四碼 ${p.to.last4}，${GRADE_NAMES[p.to.grade] || ""} ${p.to.cls} 班 ${p.to.seat} 號）`])
       .eachCell((c) => { c.border = thin; });
   }
   for (const c of collisions) {
     sn.addRow(["末四碼撞號", `末四碼 ${c.last4}：${c.students.map((s) => `${s.name}(${GRADE_NAMES[s.grade] || ""}${s.cls}班${s.seat}號)`).join("、")}`])
       .eachCell((cc) => { cc.border = thin; });
   }
-  if (!renames.length && !collisions.length) {
-    sn.addRow(["（無）", "本次無改名或末四碼撞號"]).eachCell((c) => { c.border = thin; });
+  if (!renamed.length && !collisions.length) {
+    sn.addRow(["（無）", "本次無更名或末四碼撞號"]).eachCell((c) => { c.border = thin; });
   }
 
   const buf = await wb.xlsx.writeBuffer();
@@ -683,16 +690,17 @@ async function buildChangeLogBlob() {
 // 異動摘要純文字（給複製貼進 LINE / 公文）
 function buildSummaryText() {
   const { collisions } = computeOutput();
-  const { removed, added, unchanged, renames } = state.result;
+  const { unchanged, removed, added } = state.result;
+  const { removedT, addedT, renamed } = effectiveResult();
   const after = state.current.length - removed.length + added.length;
   const L = [];
   L.push(`【學生教育雲帳號異動摘要】${stampDash()}`);
   L.push(`現有 ${state.current.length} 人 → 更新後 ${after} 人`);
-  L.push(`不變 ${unchanged}｜轉入 ${added.length}｜轉出 ${removed.length}｜改名 ${renames.length} 組｜撞號 ${collisions.length} 組`);
+  L.push(`不變 ${unchanged}｜轉入 ${addedT.length}｜轉出 ${removedT.length}｜更名 ${renamed.length} 組｜撞號 ${collisions.length} 組`);
   const fmt = (s) => `・${GRADE_NAMES[s.grade] || s.grade} ${s.cls}班${s.seat}號 ${s.name}（帳號 ${s.last4}）`;
-  if (added.length) { L.push("", "【轉入】"); added.forEach((s) => L.push(fmt(s))); }
-  if (removed.length) { L.push("", "【轉出】"); removed.forEach((s) => L.push(fmt(s))); }
-  if (renames.length) { L.push("", "【改名／證號更正】"); renames.forEach((p) => L.push(`・${p.from.name}→${p.to.name}（${p.type}）`)); }
+  if (addedT.length) { L.push("", "【轉入】"); addedT.forEach((s) => L.push(fmt(s))); }
+  if (removedT.length) { L.push("", "【轉出】"); removedT.forEach((s) => L.push(fmt(s))); }
+  if (renamed.length) { L.push("", "【更名／證號更正（視為同一人）】"); renamed.forEach((p) => L.push(`・${p.from.name}→${p.to.name}（${p.type}）`)); }
   if (collisions.length) { L.push("", "【末四碼撞號，請人工處理】"); collisions.forEach((c) => L.push(`・末四碼 ${c.last4}：${c.students.map((s) => s.name).join("、")}`)); }
   return L.join("\n");
 }
@@ -780,39 +788,52 @@ function studentRow(s, tag) {
   </tr>`;
 }
 
-function renderResult() {
-  const { removed, added, unchanged, renames } = state.result;
+// 依改名決策渲染「統計／改名勾選／轉出／轉入」。可在勾選改變時重複呼叫。
+function renderComparison() {
+  const { unchanged, renames } = state.result;
+  const { removedT, addedT } = effectiveResult();
   document.getElementById("stat-keep").textContent = unchanged;
-  document.getElementById("stat-out").textContent = removed.length;
-  document.getElementById("stat-in").textContent = added.length;
+  document.getElementById("stat-out").textContent = removedT.length;
+  document.getElementById("stat-in").textContent = addedT.length;
 
   const tableHead = `<table class="result"><tr><th></th><th>姓名</th><th>年級</th><th>班級</th><th>座號</th><th>末四碼</th><th>出生年月日</th></tr>`;
 
   const renameArea = document.getElementById("rename-area");
   if (renames.length) {
     renameArea.innerHTML = `<div class="rename-box">
-      <div class="rb-title">⚠️ 疑似同一人（${renames.length} 組）— 已照新名冊處理，僅供人工確認</div>
-      <ul>${renames.map(p =>
-        `<li>${p.from.name} → <strong>${p.to.name}</strong>（${p.type}，末四碼 ${p.to.last4}，${GRADE_NAMES[p.to.grade] || ""} ${p.to.cls} 班 ${p.to.seat} 號）</li>`
+      <div class="rb-title">⚠️ 疑似同一人（${renames.length} 組）— 勾「視為同一人」＝保留帳密、不計入轉出轉入；取消＝當作不同人</div>
+      <ul class="rename-list">${renames.map((p, i) =>
+        `<li>
+          <label class="rn-label"><input type="checkbox" class="rn-chk" data-i="${i}" ${state.renameSame[i] ? "checked" : ""}> 視為同一人</label>
+          <span class="rn-desc">${p.from.name} → <strong>${p.to.name}</strong>（${p.type}，末四碼 ${p.to.last4}，${GRADE_NAMES[p.to.grade] || ""} ${p.to.cls} 班 ${p.to.seat} 號）</span>
+        </li>`
       ).join("")}</ul>
     </div>`;
+    renameArea.querySelectorAll(".rn-chk").forEach((chk) => {
+      chk.addEventListener("change", (e) => {
+        state.renameSame[+e.target.dataset.i] = e.target.checked;
+        renderComparison();
+      });
+    });
   } else renameArea.innerHTML = "";
 
   const removedArea = document.getElementById("removed-area");
-  removedArea.innerHTML = removed.length
-    ? `<div class="list-title">🗑️ 轉出移除名單（${removed.length} 人）</div>` +
-      tableHead + removed.map(s => studentRow(s, "移除")).join("") + "</table>"
+  removedArea.innerHTML = removedT.length
+    ? `<div class="list-title">🗑️ 轉出移除名單（${removedT.length} 人）</div>` +
+      tableHead + removedT.map((s) => studentRow(s, "移除")).join("") + "</table>"
     : "";
 
   const addedArea = document.getElementById("added-area");
-  addedArea.innerHTML = added.length
-    ? `<div class="list-title">➕ 轉入新增名單（${added.length} 人）</div>` +
-      tableHead + added.map(s => studentRow(s, "新增")).join("") + "</table>"
+  addedArea.innerHTML = addedT.length
+    ? `<div class="list-title">➕ 轉入新增名單（${addedT.length} 人）</div>` +
+      tableHead + addedT.map((s) => studentRow(s, "新增")).join("") + "</table>"
     : "";
+}
 
+function renderResult() {
+  renderComparison();
   renderHealth();
   renderDerived();
-
   document.getElementById("card-result").classList.remove("hidden");
   document.getElementById("card-result").scrollIntoView({ behavior: "smooth" });
 }
@@ -898,7 +919,25 @@ function renderDerived() {
 function tryCompare() {
   if (!state.current || !state.fresh) return;
   state.result = compare(state.current, state.fresh);
+  // A-4：每組改名預設「視為同一人」（保留帳密、不計轉出轉入）
+  state.renameSame = state.result.renames.map(() => true);
   renderResult();
+}
+
+// A-4：依「視為同一人」決策，算出實際要報的轉出/轉入與更名清單。
+// 注意：輸出總表(computeOutput)一律用完整 removed/added，新名冊永遠獲勝；
+// 這裡只影響「報表分類」（統計數字、名單、異動清冊、摘要、通知單）。
+function effectiveResult() {
+  const { removed, added, renames } = state.result;
+  const fromKeys = new Set(), toKeys = new Set(), renamed = [];
+  renames.forEach((p, i) => {
+    if (state.renameSame[i]) { fromKeys.add(keyOf(p.from)); toKeys.add(keyOf(p.to)); renamed.push(p); }
+  });
+  return {
+    removedT: removed.filter((s) => !fromKeys.has(keyOf(s))),
+    addedT: added.filter((s) => !toKeys.has(keyOf(s))),
+    renamed,
+  };
 }
 
 function setupDropzone(dzId, inputId, fileLabelId, onWorkbook) {
@@ -993,7 +1032,7 @@ document.getElementById("btn-copysummary").addEventListener("click", async () =>
 
 document.getElementById("btn-slips").addEventListener("click", () => {
   if (!state.result) return;
-  const added = state.result.added;
+  const added = effectiveResult().addedT;  // 改名學生不算新生，不發通知單
   if (!added.length) { toast("本次無轉入新生，免發通知單"); return; }
   printSlips(added);
   toast(`已開啟 ${added.length} 張新生通知單，請列印或另存 PDF`);
@@ -1044,7 +1083,18 @@ window.__test = {
   },
   summaryText() { return buildSummaryText(); },
   async changeLogSize() { const b = await buildChangeLogBlob(); return b.size; },
-  slipsHTML() { return buildSlipsHTML(state.result.added); },
+  slipsHTML() { return buildSlipsHTML(effectiveResult().addedT); },
+  setRenameSame(i, v) { state.renameSame[i] = v; renderComparison(); },
+  effective() {
+    const e = effectiveResult();
+    return {
+      removedT: e.removedT.map((s) => s.name),
+      addedT: e.addedT.map((s) => s.name),
+      renamed: e.renamed.map((p) => `${p.from.name}->${p.to.name}(${p.type})`),
+      statOut: document.getElementById("stat-out").textContent,
+      statIn: document.getElementById("stat-in").textContent,
+    };
+  },
   healthCounts() {
     const cnt = (h) => ({ missingLast4: h.missingLast4.length, badBday: h.badBday.length, dupSeat: h.dupSeat.length, dupPerson: h.dupPerson.length, oddName: h.oddName.length });
     return { cur: cnt(healthCheck(state.current)), fresh: cnt(healthCheck(state.fresh)) };
@@ -1056,7 +1106,7 @@ window.__test = {
 <script>
 (function(){
   if(!('serviceWorker' in navigator)) return;
-  var APP_VERSION='2026.06.11-4';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
+  var APP_VERSION='2026.06.11-5';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
   var reloaded=false;
   function showBar(waiting){
     if(document.getElementById('sw-update-bar')) return;
