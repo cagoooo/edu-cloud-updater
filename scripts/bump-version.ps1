@@ -1,7 +1,10 @@
-# 一鍵升版：同步 version.json / sw.js(BUILD_VERSION) / index.html(APP_VERSION)
-# 用法： powershell -ExecutionPolicy Bypass -File scripts\bump-version.ps1 -Notes "這次改了什麼"
-# 升版後： git add -A; git commit -m "..."; git push
-param([string]$Notes = "內容更新")
+# Bump version in sync across version.json / sw.js(BUILD_VERSION) / index.html(APP_VERSION)
+# Usage: powershell -ExecutionPolicy Bypass -File scripts\bump-version.ps1 -Notes "what changed"
+# After: git add -A; git commit -m "..."; git push
+# NOTE: source kept ASCII-only on purpose. Windows PowerShell 5.1 misparses non-ASCII
+#       in a BOM-less .ps1 (cp950), which breaks string literals. -Notes may still be
+#       Chinese at runtime; it is written to version.json as UTF-8 data, which is fine.
+param([string]$Notes = "content update")
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $enc  = New-Object System.Text.UTF8Encoding($false)
@@ -22,4 +25,4 @@ foreach ($f in @(
   $t = [System.IO.File]::ReadAllText($p, [System.Text.Encoding]::UTF8)
   [System.IO.File]::WriteAllText($p, [regex]::Replace($t, $f[1], $f[2]), $enc)
 }
-Write-Host "bumped -> $ver（接著 git add -A; git commit; git push）"
+Write-Host "bumped -> $ver  (next: git add -A; git commit; git push)"

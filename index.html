@@ -213,6 +213,32 @@
     font-family: inherit;
   }
   .btn-reset:hover { background: #f8fafc; }
+  .export-extra { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  .btn-secondary {
+    flex: 1 1 200px;
+    background: #fff;
+    border: 1.5px solid var(--teal);
+    color: var(--teal);
+    border-radius: 11px;
+    padding: 11px 14px;
+    font-size: 14.5px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background .15s, transform .15s;
+  }
+  .btn-secondary:hover { background: #f0fdfa; transform: translateY(-1px); }
+  #mini-toast {
+    position: fixed; left: 50%; bottom: 28px;
+    transform: translateX(-50%) translateY(20px);
+    background: #0f766e; color: #fff;
+    padding: 11px 20px; border-radius: 99px;
+    font-size: 14px; font-weight: 600;
+    z-index: 10000; opacity: 0; pointer-events: none;
+    transition: opacity .25s, transform .25s;
+    box-shadow: 0 8px 24px -6px rgba(0,0,0,.4);
+  }
+  #mini-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   .hidden { display: none; }
   .warn-box {
     background: #fef2f2;
@@ -342,6 +368,10 @@
     <div class="sync-note hidden" id="sync-note"></div>
     <button class="btn-export" id="btn-export">⬇️ 下載更新後完整總表（.xlsx，標題列已凍結）</button>
     <div class="hint">輸出檔含六個年級工作表，依「班級 → 座號」排序，第一列標題已凍結窗格</div>
+    <div class="export-extra">
+      <button class="btn-secondary" id="btn-changelog">⬇️ 下載異動清冊（.xlsx）</button>
+      <button class="btn-secondary" id="btn-copysummary">📋 複製異動摘要</button>
+    </div>
     <button class="btn-reset" id="btn-reset">↺ 全部重來</button>
   </div>
 </main>
@@ -561,6 +591,101 @@ async function buildExportBlob(byGrade) {
   return new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
 
+function stampCompact() {
+  const d = new Date();
+  return d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+}
+function stampDash() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function toast(msg) {
+  let t = document.getElementById("mini-toast");
+  if (!t) { t = document.createElement("div"); t.id = "mini-toast"; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+// 異動清冊（.xlsx）：摘要 / 轉入 / 轉出 / 注意事項 四張表
+async function buildChangeLogBlob() {
+  const { collisions } = computeOutput();
+  const { removed, added, unchanged, renames } = state.result;
+  const wb = new ExcelJS.Workbook();
+  const thin = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
+  const headFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF8EB4E2" } };
+
+  const s0 = wb.addWorksheet("異動摘要");
+  s0.columns = [{ width: 22 }, { width: 46 }];
+  [
+    ["產製日期", stampDash()],
+    ["現有總人數", state.current.length],
+    ["新名冊人數", state.fresh.length],
+    ["不變（維持原帳密）", unchanged],
+    ["轉入（新增）", added.length],
+    ["轉出（移除）", removed.length],
+    ["疑似改名／證號更正", renames.length + " 組"],
+    ["末四碼撞號", collisions.length + " 組"],
+    ["升年級／編班同步", state.sync ? "開啟（依新名冊更新班級座號，帳密保留）" : "關閉"],
+  ].forEach((r) => {
+    const row = s0.addRow(r);
+    row.getCell(1).font = { bold: true };
+    row.eachCell((c) => { c.border = thin; });
+  });
+
+  function listSheet(name, arr, tag) {
+    const ws = wb.addWorksheet(name);
+    ws.views = [{ state: "frozen", ySplit: 1 }];
+    ws.columns = [{ width: 8 }, { width: 13 }, { width: 8 }, { width: 8 }, { width: 8 }, { width: 16 }, { width: 16 }];
+    const hr = ws.addRow(["異動", "姓名", "年級", "班級", "座號", "帳號(末四碼)", "密碼(生日)"]);
+    hr.eachCell((c) => { c.font = { bold: true }; c.fill = headFill; c.border = thin; c.alignment = { horizontal: "center" }; });
+    for (const s of arr) {
+      const row = ws.addRow([tag, s.name, GRADE_NAMES[s.grade] || s.grade, s.cls, s.seat, String(s.last4), String(s.bday)]);
+      row.eachCell((c) => { c.border = thin; c.alignment = { horizontal: "center" }; });
+    }
+    if (!arr.length) ws.addRow(["（無）"]);
+  }
+  listSheet("轉入(新增)", added, "轉入");
+  listSheet("轉出(移除)", removed, "轉出");
+
+  const sn = wb.addWorksheet("注意事項");
+  sn.columns = [{ width: 14 }, { width: 56 }];
+  const hr = sn.addRow(["類型", "說明"]);
+  hr.eachCell((c) => { c.font = { bold: true }; c.fill = headFill; c.border = thin; });
+  for (const p of renames) {
+    sn.addRow([p.type, `${p.from.name} → ${p.to.name}（末四碼 ${p.to.last4}，${GRADE_NAMES[p.to.grade] || ""} ${p.to.cls} 班 ${p.to.seat} 號）`])
+      .eachCell((c) => { c.border = thin; });
+  }
+  for (const c of collisions) {
+    sn.addRow(["末四碼撞號", `末四碼 ${c.last4}：${c.students.map((s) => `${s.name}(${GRADE_NAMES[s.grade] || ""}${s.cls}班${s.seat}號)`).join("、")}`])
+      .eachCell((cc) => { cc.border = thin; });
+  }
+  if (!renames.length && !collisions.length) {
+    sn.addRow(["（無）", "本次無改名或末四碼撞號"]).eachCell((c) => { c.border = thin; });
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  return new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
+// 異動摘要純文字（給複製貼進 LINE / 公文）
+function buildSummaryText() {
+  const { collisions } = computeOutput();
+  const { removed, added, unchanged, renames } = state.result;
+  const after = state.current.length - removed.length + added.length;
+  const L = [];
+  L.push(`【學生教育雲帳號異動摘要】${stampDash()}`);
+  L.push(`現有 ${state.current.length} 人 → 更新後 ${after} 人`);
+  L.push(`不變 ${unchanged}｜轉入 ${added.length}｜轉出 ${removed.length}｜改名 ${renames.length} 組｜撞號 ${collisions.length} 組`);
+  const fmt = (s) => `・${GRADE_NAMES[s.grade] || s.grade} ${s.cls}班${s.seat}號 ${s.name}（帳號 ${s.last4}）`;
+  if (added.length) { L.push("", "【轉入】"); added.forEach((s) => L.push(fmt(s))); }
+  if (removed.length) { L.push("", "【轉出】"); removed.forEach((s) => L.push(fmt(s))); }
+  if (renames.length) { L.push("", "【改名／證號更正】"); renames.forEach((p) => L.push(`・${p.from.name}→${p.to.name}（${p.type}）`)); }
+  if (collisions.length) { L.push("", "【末四碼撞號，請人工處理】"); collisions.forEach((c) => L.push(`・末四碼 ${c.last4}：${c.students.map((s) => s.name).join("、")}`)); }
+  return L.join("\n");
+}
+
 function readFileAsWorkbook(file) {
   return new Promise((resolve, reject) => {
     const fr = new FileReader();
@@ -721,13 +846,41 @@ document.getElementById("btn-export").addEventListener("click", async () => {
     ? `<div class="warn-box">⚠️ 有 ${skipped.length} 筆資料年級無法判定（非 1～6），未寫入：${skipped.map(s => s.name).join("、")}</div>`
     : "";
   const blob = await buildExportBlob(byGrade);
-  const d = new Date();
-  const stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `學生教育雲帳密_更新_${stamp}.xlsx`;
+  a.download = `學生教育雲帳密_更新_${stampCompact()}.xlsx`;
   a.click();
   URL.revokeObjectURL(a.href);
+});
+
+document.getElementById("btn-changelog").addEventListener("click", async () => {
+  if (!state.result) return;
+  const blob = await buildChangeLogBlob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `學生帳號異動清冊_${stampCompact()}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast("已下載異動清冊");
+});
+
+document.getElementById("btn-copysummary").addEventListener("click", async () => {
+  if (!state.result) return;
+  const text = buildSummaryText();
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("✅ 已複製異動摘要");
+  } catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); toast("✅ 已複製異動摘要"); }
+    catch (_) { alert(text); }
+    ta.remove();
+  }
 });
 
 document.getElementById("btn-reset").addEventListener("click", () => location.reload());
@@ -773,6 +926,8 @@ window.__test = {
     const blob = await buildExportBlob(byGrade);
     return blob.size;
   },
+  summaryText() { return buildSummaryText(); },
+  async changeLogSize() { const b = await buildChangeLogBlob(); return b.size; },
 };
 </script>
 
@@ -780,7 +935,7 @@ window.__test = {
 <script>
 (function(){
   if(!('serviceWorker' in navigator)) return;
-  var APP_VERSION='2026.06.11-1';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
+  var APP_VERSION='2026.06.11-2';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
   var reloaded=false;
   function showBar(waiting){
     if(document.getElementById('sw-update-bar')) return;
