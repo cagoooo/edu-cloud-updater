@@ -1,0 +1,13 @@
+{
+  "name": "edu-cloud-updater-assets",
+  "private": true,
+  "type": "module",
+  "description": "本機生成 favicon 全套 + OG 社群分享圖（@napi-rs/canvas + 微軟正黑體，產物為點陣 PNG，部署到 GitHub Pages 不會中文方框）",
+  "scripts": {
+    "gen": "node generate-assets.mjs"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^0.1.65",
+    "png-to-ico": "^2.1.8"
+  }
+}

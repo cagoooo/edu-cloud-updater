@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="學生教育雲帳號更新工具">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e3a8a"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="64" height="64" rx="14" fill="url(#bg)"/>
+  <!-- 比對更新環 -->
+  <g fill="none" stroke="#5eead4" stroke-width="5.4">
+    <path d="M47.76 44.31 A20 20 0 0 1 14.68 42.0"/>
+    <path d="M16.24 19.69 A20 20 0 0 1 49.32 22.0"/>
+  </g>
+  <g fill="#5eead4">
+    <polygon points="9.41,32.87 9.31,45.1 20.05,38.9"/>
+    <polygon points="54.59,31.13 54.69,18.9 43.95,25.1"/>
+  </g>
+  <!-- 教育雲 -->
+  <g fill="#ffffff">
+    <circle cx="24.44" cy="34.72" r="5.88"/>
+    <circle cx="31.44" cy="29.96" r="7.28"/>
+    <circle cx="38.72" cy="33.32" r="5.88"/>
+    <rect x="19.68" y="33.04" width="24.64" height="6.72" rx="3.36"/>
+  </g>
+</svg>
