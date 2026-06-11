@@ -371,6 +371,7 @@
     <div class="export-extra">
       <button class="btn-secondary" id="btn-changelog">⬇️ 下載異動清冊（.xlsx）</button>
       <button class="btn-secondary" id="btn-copysummary">📋 複製異動摘要</button>
+      <button class="btn-secondary" id="btn-slips">🖨️ 新生帳密通知單</button>
     </div>
     <button class="btn-reset" id="btn-reset">↺ 全部重來</button>
   </div>
@@ -686,6 +687,54 @@ function buildSummaryText() {
   return L.join("\n");
 }
 
+// 新生帳密通知單（A4 多張一頁，可列印或另存 PDF）
+function buildSlipsHTML(students) {
+  const school = "桃園市龍潭區石門國民小學";
+  const cards = students.map((s) => {
+    const grade = GRADE_NAMES[s.grade] || (s.grade + "年級");
+    return `<div class="slip">
+      <div class="slip-school">${school}</div>
+      <div class="slip-title">教育雲帳號通知單</div>
+      <div class="slip-row"><span class="k">姓名</span><span class="v name">${s.name}</span></div>
+      <div class="slip-row"><span class="k">班級座號</span><span class="v">${grade} ${s.cls} 班 ${s.seat} 號</span></div>
+      <div class="slip-div"></div>
+      <div class="slip-row"><span class="k">帳號</span><span class="v big">${s.last4}</span></div>
+      <div class="slip-row"><span class="k">初始密碼</span><span class="v big">${s.bday}</span></div>
+      <div class="slip-note">※ 帳號＝身分證末四碼，密碼＝西元出生年月日 8 碼。請妥善保管，首次登入後建議修改密碼。</div>
+    </div>`;
+  }).join("");
+  return `<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><title>新生教育雲帳號通知單</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Microsoft JhengHei","PingFang TC",sans-serif; margin: 0; color: #1e293b; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; }
+  .slip { border: 1.6px dashed #64748b; border-radius: 10px; padding: 6mm 7mm; page-break-inside: avoid; }
+  .slip-school { font-size: 12px; color: #475569; }
+  .slip-title { font-size: 17px; font-weight: 800; color: #1d4ed8; margin: 2px 0 9px; }
+  .slip-row { display: flex; align-items: center; gap: 10px; margin: 5px 0; font-size: 13.5px; }
+  .slip-row .k { width: 64px; color: #64748b; flex-shrink: 0; }
+  .slip-row .v { font-weight: 600; }
+  .slip-row .v.name { font-size: 16px; }
+  .slip-row .v.big { font-size: 20px; font-weight: 800; letter-spacing: 2px; color: #0f766e; font-family: Consolas, monospace; }
+  .slip-div { border-top: 1px solid #e2e8f0; margin: 8px 0; }
+  .slip-note { font-size: 10.5px; color: #94a3b8; margin-top: 9px; line-height: 1.5; }
+</style></head><body><div class="grid">${cards}</div></body></html>`;
+}
+
+function printSlips(students) {
+  const html = buildSlipsHTML(students);
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow.document;
+  doc.open(); doc.write(html); doc.close();
+  setTimeout(() => {
+    try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch (e) {}
+    setTimeout(() => iframe.remove(), 1500);
+  }, 300);
+}
+
 function readFileAsWorkbook(file) {
   return new Promise((resolve, reject) => {
     const fr = new FileReader();
@@ -883,6 +932,14 @@ document.getElementById("btn-copysummary").addEventListener("click", async () =>
   }
 });
 
+document.getElementById("btn-slips").addEventListener("click", () => {
+  if (!state.result) return;
+  const added = state.result.added;
+  if (!added.length) { toast("本次無轉入新生，免發通知單"); return; }
+  printSlips(added);
+  toast(`已開啟 ${added.length} 張新生通知單，請列印或另存 PDF`);
+});
+
 document.getElementById("btn-reset").addEventListener("click", () => location.reload());
 
 window.__test = {
@@ -928,6 +985,7 @@ window.__test = {
   },
   summaryText() { return buildSummaryText(); },
   async changeLogSize() { const b = await buildChangeLogBlob(); return b.size; },
+  slipsHTML() { return buildSlipsHTML(state.result.added); },
 };
 </script>
 
@@ -935,7 +993,7 @@ window.__test = {
 <script>
 (function(){
   if(!('serviceWorker' in navigator)) return;
-  var APP_VERSION='2026.06.11-2';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
+  var APP_VERSION='2026.06.11-3';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
   var reloaded=false;
   function showBar(waiting){
     if(document.getElementById('sw-update-bar')) return;

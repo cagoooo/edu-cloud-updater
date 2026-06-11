@@ -2,7 +2,7 @@
  * 版本閘門式（version-gated）：新版進入 waiting，由使用者在通知列決定何時套用。
  * HTML network-first、其餘資源（含 CDN 函式庫）cache-first + 背景更新 → 也可離線使用。
  */
-const BUILD_VERSION = '2026.06.11-2';   // 每次部署改它（或跑 scripts/bump-version.ps1）
+const BUILD_VERSION = '2026.06.11-3';   // 每次部署改它（或跑 scripts/bump-version.ps1）
 const CACHE = 'eduacct-' + BUILD_VERSION;
 const PRECACHE = [
   './', './index.html',
