@@ -1,0 +1,12 @@
+{
+  "name": "edu-cloud-updater-tests",
+  "private": true,
+  "type": "module",
+  "description": "Playwright 端對端測試：透過 window.__test 驗證比對／撞號／升年級／改名／健檢邏輯",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
+  }
+}
