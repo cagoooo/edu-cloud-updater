@@ -138,3 +138,45 @@ test('乾淨資料健檢通過、無撞號、可匯出', async ({ page }) => {
   const clog = await page.evaluate(() => window.__test.changeLogSize());
   expect(clog).toBeGreaterThan(1000);
 });
+
+test('A-5 主鍵切換：同名同末四碼不同生日', async ({ page }) => {
+  await load(page, [['一年級', [["王小明", 1, 1, 1, "1234", "20180101"]]]], [
+    ["產製資訊"], [], NEWHEAD,
+    ["王小明", "S1", 1, "2018-01-01", 1, 1, "A001234"],
+    ["王小明", "S2", 1, "2019-02-02", 1, 5, "B001234"],
+    ["李大同", "S3", 1, "2019-03-03", 1, 3, "C005678"],
+  ]);
+  let s = await page.evaluate(() => window.__test.summary());
+  expect(s.added).toBe(1); // 預設「姓名+末四碼」鍵會漏掉第二位王小明
+  await page.evaluate(() => window.__test.setKeyMode('nlb'));
+  s = await page.evaluate(() => window.__test.summary());
+  expect(s.added).toBe(2); // 加生日鍵正確區分兩位
+});
+
+test('C-1 欄位手動覆核：非標準欄名', async ({ page }) => {
+  await page.evaluate(() => {
+    function build(rows, bookType, sheet) {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sheet);
+      return XLSX.write(wb, { type: 'array', bookType });
+    }
+    const cur = build([["名字", "身分證", "生日", "年級", "班別", "號次"],
+                       ["王小明", "H123451234", "20180101", 1, 1, 1]], 'xlsx', '一年級');
+    const fresh = build([["info"], [], ["學生姓名", "學號", "年級", "出生日期", "班級", "座號", "證照號碼"],
+                         ["王小明", "S1", 1, "2018-01-01", 1, 1, "A001234"]], 'xls', '學生概況資料');
+    return window.__test.load(cur, fresh);
+  });
+  // 非標準欄名 → 自動辨識失敗 → 面板自動展開
+  expect(await page.evaluate(() => window.__test.mapAutoOpened('current'))).toBe(true);
+  expect(await page.evaluate(() => state.current.length)).toBe(0);
+  // 手動指定姓名欄(第1欄) → 套用
+  await page.evaluate(() => {
+    const panel = document.getElementById('map-panel-current');
+    panel.querySelector('select[data-field="name"]').value = '0';
+    panel.querySelector('.map-apply').click();
+  });
+  await page.waitForTimeout(150);
+  const cur = await page.evaluate(() => ({ n: state.current.length, last4: state.current[0] && state.current[0].last4 }));
+  expect(cur.n).toBe(1);
+  expect(cur.last4).toBe('1234');
+});

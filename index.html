@@ -254,6 +254,31 @@
   .keymode-row .km-label { font-weight: 700; color: var(--text); }
   .keymode-row label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
   .keymode-row input { accent-color: var(--blue); cursor: pointer; }
+  .map-host { margin-top: 10px; }
+  .map-link {
+    background: none; border: none; color: var(--blue);
+    font-size: 12.5px; cursor: pointer; padding: 2px 0;
+    text-decoration: underline; font-family: inherit;
+  }
+  .map-panel.hidden { display: none; }
+  .map-box {
+    background: #f8fafc; border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; margin-top: 8px;
+  }
+  .map-hint { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; line-height: 1.5; }
+  .map-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+  .map-field { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+  .map-field span { color: var(--text); font-weight: 600; }
+  .map-field select {
+    padding: 6px 8px; border: 1px solid var(--border);
+    border-radius: 7px; font-family: inherit; font-size: 12.5px; background: #fff;
+  }
+  .map-apply {
+    margin-top: 12px; background: var(--blue); color: #fff; border: none;
+    border-radius: 9px; padding: 9px 16px; font-size: 13.5px; font-weight: 700;
+    cursor: pointer; font-family: inherit;
+  }
+  .map-apply:hover { background: var(--blue-dark); }
   .hidden { display: none; }
   .warn-box {
     background: #fef2f2;
@@ -413,6 +438,7 @@
     </div>
     <input type="file" id="input-current" accept=".xls,.xlsx" class="hidden">
     <div class="chips hidden" id="chips-current"></div>
+    <div class="map-host" id="map-current"></div>
   </div>
 
   <div class="card" id="card-new">
@@ -425,6 +451,7 @@
     </div>
     <input type="file" id="input-new" accept=".xls,.xlsx" class="hidden">
     <div class="chips hidden" id="chips-new"></div>
+    <div class="map-host" id="map-new"></div>
   </div>
 
   <div class="card hidden" id="card-result">
@@ -1049,17 +1076,130 @@ function setupDropzone(dzId, inputId, fileLabelId, onWorkbook) {
   });
 }
 
-setupDropzone("dz-current", "input-current", "file-current", wb => {
-  state.current = parseWorkbook(wb);
-  renderChips("chips-current", state.current, "現有名冊");
-  tryCompare();
-});
+// ---- C-1 欄位手動覆核 ----
+const SRC = {
+  current: { stateKey: "current", chips: "chips-current", map: "map-current", label: "現有名冊" },
+  fresh:   { stateKey: "fresh",   chips: "chips-new",     map: "map-new",     label: "教育局新名冊" },
+};
+const MAP_FIELDS = [
+  { key: "name", label: "姓名", required: true },
+  { key: "last4", label: "末四碼／證照號碼", required: true },
+  { key: "bday", label: "出生年月日", required: false },
+  { key: "grade", label: "年級", required: false },
+  { key: "cls", label: "班級", required: false },
+  { key: "seat", label: "座號", required: false },
+];
 
-setupDropzone("dz-new", "input-new", "file-new", wb => {
-  state.fresh = parseWorkbook(wb);
-  renderChips("chips-new", state.fresh, "教育局新名冊");
+function workbookToRawSheets(wb) {
+  return wb.SheetNames.map((sname) => ({
+    name: sname,
+    rows: XLSX.utils.sheet_to_json(wb.Sheets[sname], { header: 1, raw: false, defval: "" }),
+  }));
+}
+function guessHeaderRow(rows) {
+  let hIdx = 0, best = -1;
+  for (let i = 0; i < Math.min(rows.length, 12); i++) {
+    const n = (rows[i] || []).filter((c) => clean(c)).length;
+    if (n > best) { best = n; hIdx = i; }
+  }
+  return hIdx;
+}
+function autoGuessCol(header, fieldKey) {
+  for (let idx = 0; idx < header.length; idx++) {
+    const text = clean(header[idx]);
+    if (!text) continue;
+    for (const [re, key] of ALIASES) {
+      if (key === fieldKey && re.test(text)) return idx;
+    }
+  }
+  return "";
+}
+function parseSheetsWithMapping(rawSheets, hIdx, colMap) {
+  const students = [];
+  rawSheets.forEach((sheet, sheetIdx) => {
+    const rows = sheet.rows;
+    for (let r = hIdx + 1; r < rows.length; r++) {
+      const row = rows[r] || [];
+      const name = clean(row[colMap.name]);
+      if (!name) continue;
+      let grade = colMap.grade != null ? toInt(row[colMap.grade]) : 0;
+      if (grade < 1 || grade > 9) grade = sheetIdx + 1;
+      students.push({
+        name,
+        grade,
+        cls: colMap.cls != null ? toInt(row[colMap.cls]) : 0,
+        seat: colMap.seat != null ? toInt(row[colMap.seat]) : 0,
+        last4: colMap.last4 != null ? normLast4(row[colMap.last4]) : "",
+        bday: colMap.bday != null ? normBday(row[colMap.bday]) : "",
+      });
+    }
+  });
+  return students;
+}
+function renderMapperPanel(which) {
+  const rawSheets = state["raw_" + which];
+  const panel = document.getElementById("map-panel-" + which);
+  if (!rawSheets || !rawSheets.length) { panel.innerHTML = "（讀不到資料）"; return; }
+  const sheet = rawSheets.reduce((a, b) => (b.rows.length > a.rows.length ? b : a), rawSheets[0]);
+  const rows = sheet.rows;
+  const hIdx = guessHeaderRow(rows);
+  const header = rows[hIdx] || [];
+  const sample = rows[hIdx + 1] || [];
+  const colOpts = (sel) => `<option value="">（不對應）</option>` + header.map((h, idx) =>
+    `<option value="${idx}" ${idx === sel ? "selected" : ""}>第${idx + 1}欄：${clean(h) || "(無標題)"}${clean(sample[idx]) ? `（例：${clean(sample[idx])}）` : ""}</option>`
+  ).join("");
+  const selects = MAP_FIELDS.map((f) =>
+    `<label class="map-field"><span>${f.label}${f.required ? " *" : ""}</span>
+      <select data-field="${f.key}">${colOpts(autoGuessCol(header, f.key))}</select></label>`
+  ).join("");
+  panel.innerHTML = `<div class="map-box">
+    <div class="map-hint">在「${sheet.name}」工作表偵測到 ${rows.length} 列，推測標題在第 ${hIdx + 1} 列。請確認各欄位對應（標 * 為必填）：</div>
+    <div class="map-grid">${selects}</div>
+    <button type="button" class="map-apply">套用對應並重新比對</button>
+  </div>`;
+  panel.querySelector(".map-apply").addEventListener("click", () => applyMapping(which, hIdx));
+}
+function applyMapping(which, hIdx) {
+  const cfg = SRC[which];
+  const panel = document.getElementById("map-panel-" + which);
+  const colMap = {};
+  panel.querySelectorAll("select[data-field]").forEach((s) => {
+    colMap[s.dataset.field] = s.value === "" ? null : +s.value;
+  });
+  if (colMap.name == null || colMap.last4 == null) {
+    toast("請至少指定「姓名」與「末四碼」欄位");
+    return;
+  }
+  state[cfg.stateKey] = parseSheetsWithMapping(state["raw_" + which], hIdx, colMap);
+  renderChips(cfg.chips, state[cfg.stateKey], cfg.label);
+  toast(`已套用欄位對應：辨識 ${state[cfg.stateKey].length} 人`);
+  panel.classList.add("hidden");
   tryCompare();
-});
+}
+function renderMapHost(which, wb, autoOpen) {
+  const host = document.getElementById(SRC[which].map);
+  state["raw_" + which] = workbookToRawSheets(wb);
+  host.innerHTML =
+    (autoOpen ? `<div class="map-hint" style="color:var(--red);margin-bottom:6px">⚠️ 未自動辨識到學生資料，請手動指定欄位 👇</div>` : "") +
+    `<button type="button" class="map-link">🔧 欄位辨識有誤？手動指定欄位</button>
+     <div class="map-panel ${autoOpen ? "" : "hidden"}" id="map-panel-${which}"></div>`;
+  const panel = host.querySelector(".map-panel");
+  host.querySelector(".map-link").addEventListener("click", () => {
+    if (panel.classList.contains("hidden")) { renderMapperPanel(which); panel.classList.remove("hidden"); }
+    else panel.classList.add("hidden");
+  });
+  if (autoOpen) renderMapperPanel(which);
+}
+function onFileLoaded(which, wb) {
+  const cfg = SRC[which];
+  state[cfg.stateKey] = parseWorkbook(wb);
+  renderChips(cfg.chips, state[cfg.stateKey], cfg.label);
+  renderMapHost(which, wb, state[cfg.stateKey].length === 0);
+  tryCompare();
+}
+
+setupDropzone("dz-current", "input-current", "file-current", (wb) => onFileLoaded("current", wb));
+setupDropzone("dz-new", "input-new", "file-new", (wb) => onFileLoaded("fresh", wb));
 
 document.getElementById("opt-sync").addEventListener("change", e => {
   state.sync = e.target.checked;
@@ -1133,13 +1273,14 @@ window.__test = {
   async load(curBuf, newBuf) {
     const wbCur = XLSX.read(new Uint8Array(curBuf), { type: "array" });
     const wbNew = XLSX.read(new Uint8Array(newBuf), { type: "array" });
-    state.current = parseWorkbook(wbCur);
-    renderChips("chips-current", state.current, "現有名冊");
     document.getElementById("dz-current").classList.add("loaded");
-    state.fresh = parseWorkbook(wbNew);
-    renderChips("chips-new", state.fresh, "教育局新名冊");
     document.getElementById("dz-new").classList.add("loaded");
-    tryCompare();
+    onFileLoaded("current", wbCur);
+    onFileLoaded("fresh", wbNew);
+  },
+  mapAutoOpened(which) {
+    const p = document.getElementById("map-panel-" + which);
+    return p ? !p.classList.contains("hidden") : false;
   },
   setSync(v) {
     state.sync = v;
@@ -1201,7 +1342,7 @@ window.__test = {
 <script>
 (function(){
   if(!('serviceWorker' in navigator)) return;
-  var APP_VERSION='2026.06.11-7';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
+  var APP_VERSION='2026.06.11-8';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
   var reloaded=false;
   function showBar(waiting){
     if(document.getElementById('sw-update-bar')) return;
