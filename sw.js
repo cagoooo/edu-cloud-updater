@@ -2,15 +2,14 @@
  * 版本閘門式（version-gated）：新版進入 waiting，由使用者在通知列決定何時套用。
  * HTML network-first、其餘資源（含 CDN 函式庫）cache-first + 背景更新 → 也可離線使用。
  */
-const BUILD_VERSION = '2026.06.11-3';   // 每次部署改它（或跑 scripts/bump-version.ps1）
+const BUILD_VERSION = '2026.06.11-4';   // 每次部署改它（或跑 scripts/bump-version.ps1）
 const CACHE = 'eduacct-' + BUILD_VERSION;
 const PRECACHE = [
   './', './index.html',
   './favicon.svg', './favicon.ico', './apple-touch-icon.png',
   './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png',
-  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-  'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js',
+  './vendor/xlsx.full.min.js', './vendor/exceljs.min.js',
 ];
 
 self.addEventListener('install', (e) => {

@@ -34,8 +34,9 @@
 <meta name="twitter:image" content="https://cagoooo.github.io/edu-cloud-updater/og-preview.png?v=2026-06-11">
 
 <link rel="canonical" href="https://cagoooo.github.io/edu-cloud-updater/">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<!-- 自家託管（self-host）函式庫：版本固定，不依賴第三方 CDN 可用性、無供應鏈竄改風險、離線可用 -->
+<script src="vendor/xlsx.full.min.js"></script><!-- SheetJS 0.18.5 -->
+<script src="vendor/exceljs.min.js"></script><!-- ExcelJS 4.4.0 -->
 <style>
   :root {
     --blue: #2563eb;
@@ -266,6 +267,14 @@
   .collision-box ul { padding-left: 20px; }
   .collision-box li { margin: 5px 0; color: #991b1b; }
   .collision-box li strong { color: var(--red); }
+  .health-box { border-radius: 12px; padding: 13px 16px; margin: 14px 0; font-size: 13px; }
+  .health-box.ok { background: #f0fdf4; border: 1.5px solid #bbf7d0; }
+  .health-box.warn { background: #fffbeb; border: 1.5px solid #fde68a; }
+  .health-box .hb-title { font-weight: 700; color: #b45309; }
+  .health-box .hb-title.ok { color: var(--green); }
+  .health-box ul { padding-left: 18px; margin-top: 7px; }
+  .health-box li { margin: 4px 0; color: #92400e; line-height: 1.55; }
+  .health-box li b { color: #b45309; }
   .sync-toggle {
     display: flex;
     align-items: flex-start;
@@ -353,6 +362,7 @@
       <div class="stat out"><div class="num" id="stat-out">0</div><div class="lbl">轉出（移除）</div></div>
       <div class="stat in"><div class="num" id="stat-in">0</div><div class="lbl">轉入（新增）</div></div>
     </div>
+    <div id="health-area"></div>
     <div id="collision-area"></div>
     <div id="rename-area"></div>
     <div id="removed-area"></div>
@@ -800,10 +810,59 @@ function renderResult() {
       tableHead + added.map(s => studentRow(s, "新增")).join("") + "</table>"
     : "";
 
+  renderHealth();
   renderDerived();
 
   document.getElementById("card-result").classList.remove("hidden");
   document.getElementById("card-result").scrollIntoView({ behavior: "smooth" });
+}
+
+// ---- 資料健檢（Pre-flight Check）----
+function isValidBday(b) {
+  if (!/^\d{8}$/.test(b)) return false;
+  const y = +b.slice(0, 4), m = +b.slice(4, 6), d = +b.slice(6, 8);
+  return y >= 1990 && y <= 2035 && m >= 1 && m <= 12 && d >= 1 && d <= 31;
+}
+function healthCheck(list) {
+  const missingLast4 = [], badBday = [], oddName = [];
+  const seatMap = new Map(), personMap = new Map();
+  for (const s of list) {
+    if (!s.last4) missingLast4.push(s);
+    if (!isValidBday(s.bday)) badBday.push(s);
+    if (!s.name || s.name.length < 2 || /\d/.test(s.name)) oddName.push(s);
+    if (s.seat > 0) {
+      const k = s.grade + "-" + s.cls + "-" + s.seat;
+      if (!seatMap.has(k)) seatMap.set(k, []);
+      seatMap.get(k).push(s);
+    }
+    const pk = s.name + "|" + s.last4;
+    if (!personMap.has(pk)) personMap.set(pk, []);
+    personMap.get(pk).push(s);
+  }
+  return {
+    missingLast4, badBday, oddName,
+    dupSeat: [...seatMap.values()].filter((a) => a.length > 1),
+    dupPerson: [...personMap.values()].filter((a) => a.length > 1),
+  };
+}
+function renderHealth() {
+  const area = document.getElementById("health-area");
+  const sources = [["現有總表", state.current], ["教育局新名冊", state.fresh]];
+  const cap = (arr, fmt) => arr.slice(0, 6).map(fmt).join("、") + (arr.length > 6 ? ` 等 ${arr.length} 筆` : "");
+  const gname = (s) => GRADE_NAMES[s.grade] || s.grade;
+  const lines = [];
+  for (const [label, list] of sources) {
+    if (!list) continue;
+    const h = healthCheck(list);
+    if (h.missingLast4.length) lines.push(`<li><b>缺末四碼（無法建帳號）</b>：[${label}] ${cap(h.missingLast4, (s) => s.name)}</li>`);
+    if (h.badBday.length) lines.push(`<li><b>生日格式異常（密碼會錯）</b>：[${label}] ${cap(h.badBday, (s) => `${s.name}(${s.bday || "空"})`)}</li>`);
+    if (h.dupSeat.length) lines.push(`<li><b>同班座號重複</b>：[${label}] ${cap(h.dupSeat, (g) => `${gname(g[0])}${g[0].cls}班${g[0].seat}號(${g.map((s) => s.name).join("/")})`)}</li>`);
+    if (h.dupPerson.length) lines.push(`<li><b>整列重複</b>：[${label}] ${cap(h.dupPerson, (g) => `${g[0].name}`)}</li>`);
+    if (h.oddName.length) lines.push(`<li><b>姓名異常（空白／含數字／過短）</b>：[${label}] ${cap(h.oddName, (s) => `「${s.name}」`)}</li>`);
+  }
+  area.innerHTML = lines.length
+    ? `<div class="health-box warn"><div class="hb-title">⚠️ 資料健檢：發現 ${lines.length} 類提醒（僅供人工確認，不影響比對）</div><ul>${lines.join("")}</ul></div>`
+    : `<div class="health-box ok"><div class="hb-title ok">✅ 資料健檢通過 — 末四碼／生日／座號皆正常</div></div>`;
 }
 
 // 依 sync 開關即時重算並渲染「末四碼碰撞警告」與「在校生同步提示」。
@@ -986,6 +1045,10 @@ window.__test = {
   summaryText() { return buildSummaryText(); },
   async changeLogSize() { const b = await buildChangeLogBlob(); return b.size; },
   slipsHTML() { return buildSlipsHTML(state.result.added); },
+  healthCounts() {
+    const cnt = (h) => ({ missingLast4: h.missingLast4.length, badBday: h.badBday.length, dupSeat: h.dupSeat.length, dupPerson: h.dupPerson.length, oddName: h.oddName.length });
+    return { cur: cnt(healthCheck(state.current)), fresh: cnt(healthCheck(state.fresh)) };
+  },
 };
 </script>
 
@@ -993,7 +1056,7 @@ window.__test = {
 <script>
 (function(){
   if(!('serviceWorker' in navigator)) return;
-  var APP_VERSION='2026.06.11-3';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
+  var APP_VERSION='2026.06.11-4';   // 與 sw.js 的 BUILD_VERSION 同步（bump-version.ps1 會一起改）
   var reloaded=false;
   function showBar(waiting){
     if(document.getElementById('sw-update-bar')) return;
