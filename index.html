@@ -193,6 +193,51 @@
     font-size: 13px;
     color: var(--red);
   }
+  .collision-box {
+    background: #fef2f2;
+    border: 2px solid #fca5a5;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 16px 0;
+    font-size: 13.5px;
+  }
+  .collision-box.clear {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+  }
+  .collision-box .cb-title { font-weight: 700; color: var(--red); margin-bottom: 8px; }
+  .collision-box .cb-title.ok { color: var(--green); margin-bottom: 0; }
+  .collision-box ul { padding-left: 20px; }
+  .collision-box li { margin: 5px 0; color: #991b1b; }
+  .collision-box li strong { color: var(--red); }
+  .sync-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 13px 15px;
+    margin-top: 18px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .sync-toggle input {
+    width: 18px; height: 18px;
+    margin-top: 1px;
+    flex-shrink: 0;
+    cursor: pointer;
+    accent-color: var(--blue);
+  }
+  .sync-toggle .st-text strong { display: block; color: var(--text); font-size: 14px; margin-bottom: 3px; }
+  .sync-toggle .st-text span { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .sync-note {
+    font-size: 13px;
+    color: var(--teal);
+    margin-top: 10px;
+    text-align: center;
+    font-weight: 600;
+  }
   .hint { font-size: 12.5px; color: var(--muted); margin-top: 10px; text-align: center; }
   .site-credit {
     text-align: center;
@@ -252,10 +297,19 @@
       <div class="stat out"><div class="num" id="stat-out">0</div><div class="lbl">轉出（移除）</div></div>
       <div class="stat in"><div class="num" id="stat-in">0</div><div class="lbl">轉入（新增）</div></div>
     </div>
+    <div id="collision-area"></div>
     <div id="rename-area"></div>
     <div id="removed-area"></div>
     <div id="added-area"></div>
     <div id="warn-area"></div>
+    <label class="sync-toggle">
+      <input type="checkbox" id="opt-sync" checked>
+      <span class="st-text">
+        <strong>同步在校生的年級／班級／座號（依新名冊）</strong>
+        <span>跨學年升級・重新編班請務必勾選。帳號（末四碼）與密碼（生日）一律保留原值，只更新班級座號位置。</span>
+      </span>
+    </label>
+    <div class="sync-note hidden" id="sync-note"></div>
     <button class="btn-export" id="btn-export">⬇️ 下載更新後完整總表（.xlsx，標題列已凍結）</button>
     <div class="hint">輸出檔含六個年級工作表，依「班級 → 座號」排序，第一列標題已凍結窗格</div>
     <button class="btn-reset" id="btn-reset">↺ 全部重來</button>
@@ -285,7 +339,7 @@ const ALIASES = [
   [/出生|生日/, "bday"],
 ];
 
-const state = { current: null, fresh: null, result: null };
+const state = { current: null, fresh: null, result: null, sync: true };
 
 function clean(v) {
   if (v === null || v === undefined) return "";
@@ -387,9 +441,22 @@ function compare(currentList, freshList) {
   return { removed, added, unchanged, renames };
 }
 
-function applyChanges(currentList, removed, added) {
+function applyChanges(currentList, freshList, removed, added, sync) {
   const removeKeys = new Set(removed.map(keyOf));
-  const kept = currentList.filter(s => !removeKeys.has(keyOf(s)));
+  const freshMap = new Map(freshList.map(s => [keyOf(s), s]));
+  let synced = 0;
+  // 在校生（key 相符、未轉出者）。sync=true 時依新名冊更新年級／班級／座號，
+  // 但帳號（末四碼）與密碼（生日）一律保留原值，只動位置不動帳密。
+  const kept = currentList
+    .filter(s => !removeKeys.has(keyOf(s)))
+    .map(s => {
+      if (sync && freshMap.has(keyOf(s))) {
+        const f = freshMap.get(keyOf(s));
+        if (f.grade !== s.grade || f.cls !== s.cls || f.seat !== s.seat) synced++;
+        return { ...s, grade: f.grade, cls: f.cls, seat: f.seat };
+      }
+      return s;
+    });
   const skipped = [];
   const byGrade = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
   for (const s of kept) {
@@ -403,7 +470,32 @@ function applyChanges(currentList, removed, added) {
   for (const g of Object.keys(byGrade)) {
     byGrade[g].sort((a, b) => a.cls - b.cls || a.seat - b.seat);
   }
-  return { byGrade, skipped };
+  return { byGrade, skipped, synced };
+}
+
+// 末四碼碰撞偵測：教育雲帳號＝末四碼，全校若有兩人以上共用同一末四碼即會撞號。
+function findCollisions(byGrade) {
+  const byLast4 = new Map();
+  for (let g = 1; g <= 6; g++) {
+    for (const s of (byGrade[g] || [])) {
+      if (!s.last4) continue;
+      if (!byLast4.has(s.last4)) byLast4.set(s.last4, []);
+      byLast4.get(s.last4).push(s);
+    }
+  }
+  const collisions = [];
+  for (const [last4, students] of byLast4) {
+    if (students.length > 1) collisions.push({ last4, students });
+  }
+  return collisions;
+}
+
+// 依目前 state（含 sync 開關）算出最終輸出資料、跳過名單與碰撞清單。
+function computeOutput() {
+  const { removed, added } = state.result;
+  const out = applyChanges(state.current, state.fresh, removed, added, state.sync);
+  out.collisions = findCollisions(out.byGrade);
+  return out;
 }
 
 async function buildExportBlob(byGrade) {
@@ -504,8 +596,40 @@ function renderResult() {
       tableHead + added.map(s => studentRow(s, "新增")).join("") + "</table>"
     : "";
 
+  renderDerived();
+
   document.getElementById("card-result").classList.remove("hidden");
   document.getElementById("card-result").scrollIntoView({ behavior: "smooth" });
+}
+
+// 依 sync 開關即時重算並渲染「末四碼碰撞警告」與「在校生同步提示」。
+// 不含捲動，可在切換開關時重複呼叫。
+function renderDerived() {
+  if (!state.result) return;
+  const { collisions, synced } = computeOutput();
+
+  const collArea = document.getElementById("collision-area");
+  if (collisions.length) {
+    collArea.innerHTML = `<div class="collision-box">
+      <div class="cb-title">🔴 末四碼重複警告（${collisions.length} 組）— 教育雲帳號會撞號，請務必人工確認！</div>
+      <ul>${collisions.map(c =>
+        `<li><strong>末四碼 ${c.last4}</strong>：${c.students.map(s =>
+          `${s.name}（${GRADE_NAMES[s.grade] || s.grade} ${s.cls} 班 ${s.seat} 號）`).join("　／　")}</li>`
+      ).join("")}</ul>
+    </div>`;
+  } else {
+    collArea.innerHTML = `<div class="collision-box clear">
+      <div class="cb-title ok">✅ 末四碼無重複 — 全校帳號不會撞號</div>
+    </div>`;
+  }
+
+  const note = document.getElementById("sync-note");
+  if (state.sync && synced > 0) {
+    note.textContent = `🔄 已依新名冊更新 ${synced} 位在校生的年級／班級／座號（帳號密碼保留原值）`;
+    note.classList.remove("hidden");
+  } else {
+    note.classList.add("hidden");
+  }
 }
 
 function tryCompare() {
@@ -554,9 +678,14 @@ setupDropzone("dz-new", "input-new", "file-new", wb => {
   tryCompare();
 });
 
+document.getElementById("opt-sync").addEventListener("change", e => {
+  state.sync = e.target.checked;
+  renderDerived();
+});
+
 document.getElementById("btn-export").addEventListener("click", async () => {
   if (!state.result) return;
-  const { byGrade, skipped } = applyChanges(state.current, state.result.removed, state.result.added);
+  const { byGrade, skipped } = computeOutput();
   const warnArea = document.getElementById("warn-area");
   warnArea.innerHTML = skipped.length
     ? `<div class="warn-box">⚠️ 有 ${skipped.length} 筆資料年級無法判定（非 1～6），未寫入：${skipped.map(s => s.name).join("、")}</div>`
@@ -585,8 +714,14 @@ window.__test = {
     document.getElementById("dz-new").classList.add("loaded");
     tryCompare();
   },
+  setSync(v) {
+    state.sync = v;
+    const el = document.getElementById("opt-sync");
+    if (el) el.checked = v;
+    renderDerived();
+  },
   summary() {
-    const { byGrade, skipped } = applyChanges(state.current, state.result.removed, state.result.added);
+    const { byGrade, skipped, synced, collisions } = computeOutput();
     const gradeCounts = {};
     for (const g of Object.keys(byGrade)) gradeCounts[g] = byGrade[g].length;
     return {
@@ -598,10 +733,13 @@ window.__test = {
       renames: state.result.renames.map(p => `${p.from.name}->${p.to.name}(${p.type})`),
       gradeCounts,
       skipped: skipped.length,
+      synced,
+      sync: state.sync,
+      collisions: collisions.map(c => `${c.last4}:${c.students.map(s => s.name + s.grade).join("/")}`),
     };
   },
   async exportSize() {
-    const { byGrade } = applyChanges(state.current, state.result.removed, state.result.added);
+    const { byGrade } = computeOutput();
     const blob = await buildExportBlob(byGrade);
     return blob.size;
   },
