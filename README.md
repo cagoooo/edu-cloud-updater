@@ -1,6 +1,6 @@
 # 🏫 學生教育雲帳號更新工具
 
-> 📌 **建置版本：2026.06.11-8**（依據 `version.json`）
+> 📌 **建置版本：2026.11.17-1**（依據 `version.json`）
 
 🌐 **線上使用**：https://cagoooo.github.io/edu-cloud-updater/
 
